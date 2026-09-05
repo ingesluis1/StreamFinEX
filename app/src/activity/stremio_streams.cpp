@@ -22,11 +22,6 @@ using namespace brls::literals;
 
 namespace {
 
-// The SD card in a modded Switch is almost always FAT32, which cannot hold a
-// single file of 4 GiB or more. 4K remuxes routinely exceed that, so refuse
-// them up front rather than failing partway through a long download.
-constexpr int64_t FAT32_MAX_FILE = 4294967295LL;
-
 // Turn a release filename into something FAT32 and MPV both accept: no
 // reserved characters, plain ASCII, no leading/trailing dots or spaces, and
 // short enough to survive the download directory prefix.
@@ -244,10 +239,6 @@ StreamPicker::StreamPicker(const std::string& title, const std::vector<stremio::
                 if (index >= playable.size()) return true;
 
                 auto& s = playable.at(index);
-                if (s.videoSize >= FAT32_MAX_FILE) {
-                    brls::Application::notify("Too big for FAT32 (4 GB max) - pick a smaller release");
-                    return true;
-                }
 
                 // The same release for the same title always hashes to the same
                 // id, so pressing X twice cannot queue it twice.

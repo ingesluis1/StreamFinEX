@@ -1,5 +1,8 @@
 #include "utils/download.hpp"
 #include "utils/config.hpp"
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 #include "utils/thread.hpp"
 #include "utils/misc.hpp"
 #include "api/jellyfin.hpp"
@@ -451,6 +454,19 @@ void DownloadManager::doDownload(DownloadItem& item) {
         std::string error;
 
         try {
+#ifdef __SWITCH__
+            // FAT32 cannot hold a file of 4 GiB or more, and most releases worth
+            // downloading are bigger than that. Create it the way the console
+            // stores games: a concatenation file, which the filesystem keeps as
+            // numbered parts underneath and presents as one file to anything
+            // reading through it -- MPV included. Only the console sees it that
+            // way; on a PC the card shows a directory with the parts inside.
+            std::error_code rmErr;
+            fs::remove_all(filePath, rmErr);  // a leftover plain file blocks creation
+            Result rc = fsdevCreateFile(filePath.c_str(), 0, FsCreateOption_BigFile);
+            if (R_FAILED(rc))
+                brls::Logger::warning("Concatenation file refused (0x{:x}); writing a plain file", rc);
+#endif
             std::ofstream of(filePath, std::ios::binary);
             if (!of) throw std::runtime_error("Failed to open file for writing");
 

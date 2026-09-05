@@ -8,6 +8,7 @@
 #include "view/video_card.hpp"
 #include "view/svg_image.hpp"
 #include "view/stremio_theme.hpp"
+#include "tab/download_tab.hpp"
 #include "utils/image.hpp"
 
 #include <algorithm>
@@ -90,6 +91,18 @@ brls::Box* makePill(brls::Label** lblOut, const std::string& text) {
     return pill;
 }
 
+// The downloads list is built as a tab: its B action calls dismiss(), which
+// hands focus back to an AutoTabFrame sidebar. Pushed as an activity of its
+// own there is no sidebar, so B would do nothing and strand the user here.
+// Popping the activity keeps B behaving as "back".
+class DownloadsScreen : public DownloadView {
+public:
+    void dismiss(std::function<void(void)> cb = [] {}) override {
+        (void)cb;
+        brls::Application::popActivity();
+    }
+};
+
 }  // namespace
 
 StremioLibrary::StremioLibrary() {
@@ -112,8 +125,10 @@ StremioLibrary::StremioLibrary() {
 
     this->btnSearch = makePill(&this->lblSearch, "🔍 Search");
     this->btnSort = makePill(&this->lblSort, "Sort: Recent");
+    this->btnDownloads = makePill(&this->lblDownloads, "Downloads");
     top->addView(this->btnSearch);
     top->addView(this->btnSort);
+    top->addView(this->btnDownloads);
     this->addView(top);
 
     auto doSearch = [this]() {
@@ -142,6 +157,15 @@ StremioLibrary::StremioLibrary() {
         return true;
     });
     this->btnSort->addGestureRecognizer(new brls::TapGestureRecognizer(this->btnSort));
+
+    // Saved streams live in the download queue, which until now had no way in:
+    // this fork boots straight into StremioHome, so the tab frame in main.xml
+    // that used to hold the downloads list is never shown.
+    this->btnDownloads->registerClickAction([](brls::View*) {
+        brls::Application::pushActivity(new brls::Activity(new DownloadsScreen()));
+        return true;
+    });
+    this->btnDownloads->addGestureRecognizer(new brls::TapGestureRecognizer(this->btnDownloads));
 
     // ---- Grid --------------------------------------------------------------
     this->recycler = new RecyclingGrid();

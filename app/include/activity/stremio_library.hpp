@@ -3,7 +3,8 @@
 
     Full-screen grid of everything saved to the Library (the old favourites),
     with search (filter by title) and sort (recent / name / year / rating)
-    controls at the top. A opens the title, X removes it from the library.
+    controls at the top, plus a Downloads pill that opens the offline list.
+    A opens the title, X removes it from the library.
 */
 #pragma once
 
@@ -27,8 +28,10 @@ private:
     brls::Label* headline = nullptr;
     brls::Label* lblSearch = nullptr;
     brls::Label* lblSort = nullptr;
+    brls::Label* lblDownloads = nullptr;
     brls::Box* btnSearch = nullptr;
     brls::Box* btnSort = nullptr;
+    brls::Box* btnDownloads = nullptr;
     RecyclingGrid* recycler = nullptr;
 
     int sortMode = 0;    // 0 recent, 1 name, 2 year, 3 rating

@@ -333,6 +333,7 @@ void DownloadManager::doDownload(DownloadItem& item) {
     std::string itemDir = this->downloadDir() + "/" + itemId;
     bool isDirect = !item.sourceUrl.empty();
     std::string presetFile = item.filePath;
+    int64_t expectedTotal = item.totalBytes;
 
     this->saveIndex();
 
@@ -342,7 +343,8 @@ void DownloadManager::doDownload(DownloadItem& item) {
     brls::sync([this, itemId]() { this->statusEvent.fire(itemId, DownloadStatus::Downloading); });
 
     ThreadPool::instance().submit(
-        [this, itemId, imagePrimaryTag, quality, url, itemDir, cancel, isDirect, presetFile](HTTP& s) {
+        [this, itemId, imagePrimaryTag, quality, url, itemDir, cancel, isDirect, presetFile,
+            expectedTotal](HTTP& s) {
         auto resetQueue = [this, itemId](const std::string& error) {
             brls::sync([this, itemId, error]() {
                 {
@@ -422,6 +424,21 @@ void DownloadManager::doDownload(DownloadItem& item) {
             this->saveIndex();
         }
 
+        // Pick up where an interrupted download stopped. Only when the expected
+        // size is known: without it there is no way to tell afterwards whether
+        // the server honoured the range or quietly sent the whole file again,
+        // and appending a full body to a partial one produces a file that looks
+        // fine and breaks halfway through.
+        int64_t resumeFrom = 0;
+        if (isDirect && expectedTotal > 0) {
+            std::error_code sizeErr;
+            auto onDisk = static_cast<int64_t>(fs::file_size(filePath, sizeErr));
+            if (!sizeErr && onDisk > 0 && onDisk < expectedTotal) {
+                resumeFrom = onDisk;
+                brls::Logger::info("Resuming {} at {} of {} bytes", itemId, resumeFrom, expectedTotal);
+            }
+        }
+
         if (!imagePrimaryTag.empty() && !cancel->load()) {
             try {
                 std::string thumbUrl = fmt::format("{}/Items/{}/Images/Primary?format=Png&{}", conf.getUrl(), itemId,
@@ -439,18 +456,20 @@ void DownloadManager::doDownload(DownloadItem& item) {
             if (tp - *lastProgress < std::chrono::seconds(1)) return;
             *lastProgress = tp;
 
-            brls::sync([this, itemId, total, now]() {
+            // curl counts a ranged request from zero, so shift both figures by
+            // what is already on disk to keep the bar showing the whole file.
+            brls::sync([this, itemId, total, now, resumeFrom]() {
                 {
                     std::lock_guard<std::mutex> lock(this->mutex);
                     for (auto& item : this->items) {
                         if (item.itemId == itemId) {
-                            item.totalBytes = total;
-                            item.downloadedBytes = now;
+                            item.totalBytes = total + resumeFrom;
+                            item.downloadedBytes = now + resumeFrom;
                             break;
                         }
                     }
                 }
-                this->progressEvent.fire(itemId, now, total);
+                this->progressEvent.fire(itemId, now + resumeFrom, total + resumeFrom);
             });
         };
 
@@ -459,28 +478,49 @@ void DownloadManager::doDownload(DownloadItem& item) {
         std::string error;
 
         try {
+            if (resumeFrom == 0) {
 #ifdef __SWITCH__
-            // FAT32 cannot hold a file of 4 GiB or more, and most releases worth
-            // downloading are bigger than that. Create it the way the console
-            // stores games: a concatenation file, which the filesystem keeps as
-            // numbered parts underneath and presents as one file to anything
-            // reading through it -- MPV included. Only the console sees it that
-            // way; on a PC the card shows a directory with the parts inside.
-            std::error_code rmErr;
-            fs::remove_all(filePath, rmErr);  // a leftover plain file blocks creation
-            Result rc = fsdevCreateFile(filePath.c_str(), 0, FsCreateOption_BigFile);
-            if (R_FAILED(rc))
-                brls::Logger::warning("Concatenation file refused (0x{:x}); writing a plain file", rc);
+                // FAT32 cannot hold a file of 4 GiB or more, and most releases
+                // worth downloading are bigger than that. Create it the way the
+                // console stores games: a concatenation file, which the
+                // filesystem keeps as numbered parts underneath and presents as
+                // one file to anything reading through it -- MPV included. Only
+                // the console sees it that way; on a PC the card shows a
+                // directory with the parts inside.
+                std::error_code rmErr;
+                fs::remove_all(filePath, rmErr);  // a leftover plain file blocks creation
+                Result rc = fsdevCreateFile(filePath.c_str(), 0, FsCreateOption_BigFile);
+                if (R_FAILED(rc))
+                    brls::Logger::warning("Concatenation file refused (0x{:x}); writing a plain file", rc);
 #endif
-            std::ofstream of(filePath, std::ios::binary);
+            }
+
+            std::ofstream of(
+                filePath, resumeFrom > 0 ? (std::ios::binary | std::ios::app) : std::ios::binary);
             if (!of) throw std::runtime_error("Failed to open file for writing");
 
             HTTP s;
+            if (resumeFrom > 0) HTTP::set_option(s, HTTP::Range{resumeFrom, 0});
             HTTP::set_option(s, header, cancel, progressCb);
             s._get(url, &of);
             of.close();
 
             cancelled = cancel->load();
+            if (!cancelled && resumeFrom > 0) {
+                // A server that ignores the range answers with the whole file,
+                // which just got appended to the part already there. The result
+                // is longer than it should be and broken in the middle, so check
+                // the length before calling it done. Only resumed transfers are
+                // checked: a fresh one is trusted as before, because addons do
+                // not always report the size accurately and a good file should
+                // not be thrown away over that.
+                std::error_code chkErr;
+                auto finalSize = static_cast<int64_t>(fs::file_size(filePath, chkErr));
+                if (!chkErr && finalSize != expectedTotal) {
+                    fs::remove_all(filePath, chkErr);
+                    throw std::runtime_error("Resume produced the wrong size; the part file was discarded");
+                }
+            }
             if (!cancelled) success = true;
         } catch (const std::exception& ex) {
             error = ex.what();

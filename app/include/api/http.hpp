@@ -27,8 +27,8 @@ public:
     inline static std::string PROXY;
 
     struct Range {
-        int start = 0;
-        int end = 0;
+        int64_t start = 0;
+        int64_t end = 0;  ///< 0 means open ended: everything from start onwards
     };
 
     struct Timeout {

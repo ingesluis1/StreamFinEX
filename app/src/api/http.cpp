@@ -156,7 +156,10 @@ void HTTP::set_option(const Header& hs) {
 }
 
 void HTTP::set_option(const Range& r) {
-    const std::string range_str = std::to_string(r.start) + "-" + std::to_string(r.end);
+    // "start-0" asks for nothing at all; an open ended range is written as
+    // "start-", which is the form a resumed download needs.
+    const std::string range_str =
+        r.end > 0 ? std::to_string(r.start) + "-" + std::to_string(r.end) : std::to_string(r.start) + "-";
     curl_easy_setopt(this->easy, CURLOPT_RANGE, range_str.c_str());
 }
 

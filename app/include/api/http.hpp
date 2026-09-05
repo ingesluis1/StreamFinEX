@@ -98,6 +98,11 @@ public:
 
     inline static long TIMEOUT = 3000L;
 
+    /// Set on shutdown to abort every request in flight. Workers are joined on
+    /// the way out, and a worker waiting on a transfer holds that up with the
+    /// window already gone -- a black screen until the request finishes.
+    inline static std::atomic_bool aborting{false};
+
 private:
     static size_t easy_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata);
     static int easy_progress_cb(

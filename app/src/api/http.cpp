@@ -124,6 +124,11 @@ HTTP::HTTP() : chunk(nullptr) {
     // enable all supported built-in compressions
     curl_easy_setopt(this->easy, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(this->easy, CURLOPT_VERBOSE, 0L);
+    // Installed on every request, not just the ones that opt into a cancel
+    // flag, so shutdown can abort whatever happens to be in flight.
+    curl_easy_setopt(this->easy, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(this->easy, CURLOPT_XFERINFOFUNCTION, easy_progress_cb);
+    curl_easy_setopt(this->easy, CURLOPT_XFERINFODATA, this);
     curl_easy_setopt(this->easy, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(this->easy, CURLOPT_SSL_VERIFYHOST, 0L);
 #if LIBCURL_VERSION_NUM >= 0x071900 && !defined(__PS4__)
@@ -163,7 +168,10 @@ void HTTP::set_option(const Timeout& t) {
 int HTTP::easy_progress_cb(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
     HTTP* ctx = reinterpret_cast<HTTP*>(clientp);
     ctx->event.fire(dltotal, dlnow);
-    return ctx->is_cancel->load() ? 1 : CURL_PROGRESSFUNC_CONTINUE;
+    if (HTTP::aborting.load()) return 1;
+    // is_cancel is only set by requests that asked for a cancel flag; the
+    // callback now runs for all of them, so it has to be checked.
+    return (ctx->is_cancel && ctx->is_cancel->load()) ? 1 : CURL_PROGRESSFUNC_CONTINUE;
 }
 
 void HTTP::set_option(const Cancel& c) {

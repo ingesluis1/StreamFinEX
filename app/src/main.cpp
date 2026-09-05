@@ -3,6 +3,7 @@
 #include "utils/config.hpp"
 #include "utils/download.hpp"
 #include "utils/thread.hpp"
+#include "api/http.hpp"
 #include "api/analytics.hpp"
 #include "api/stremio.hpp"
 #include "activity/stremio_home.hpp"
@@ -152,6 +153,7 @@ int main(int argc, char* argv[]) {
     // gone by then, so quitting mid-download left a black screen for as long as
     // the download had left to run. Abort the transfer first; the item stays
     // half-finished on disk and comes back as queued on the next launch.
+    HTTP::aborting.store(true);
     DownloadManager::instance().abortActive();
     ThreadPool::instance().stop();
 

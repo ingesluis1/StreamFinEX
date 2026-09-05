@@ -34,13 +34,23 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DPLATFORM_SWITCH=ON \
           -DBUILTIN_NSP=OFF \
-          -DVERSION_BUILD=${{ github.run_number }}
+          -DVERSION_BUILD=4
         make -C build StreamFin.nro -j$(nproc)
+    - name: Symbolicate crash addresses
+      run: |
+        ELF=$(find build -maxdepth 3 -name '*.elf' | head -1)
+        A2L=/opt/devkitpro/devkitA64/bin/aarch64-none-elf-addr2line
+        echo "elf: $ELF" | tee build/symbols.txt
+        sha256sum build/StreamFin.nro | tee -a build/symbols.txt
+        $A2L -f -C -p -i -e "$ELF"           0x14dc610 0x14dc5fc 0x14c8280           0x405788 0x405f80 0x408078 0x43b4c4 0x43ca40 0x43a5fc 0x40f648           0x409678 0x40a0ac 0x40ac6c 0x3d8de0 0x3d971c 0x3cdc2c           0x1c3d04 0x1c3e40 0x29599c 0x29fc24 0x2a9460 0x539a64 0x53cf78           | tee -a build/symbols.txt
+
     - name: Upload nro artifact
       uses: actions/upload-artifact@v4
       with:
         name: StreamFin-NintendoSwitch
-        path: build/StreamFin.nro
+        path: |
+          build/StreamFin.nro
+          build/symbols.txt
     - name: Release
       if: github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2

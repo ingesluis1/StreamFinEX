@@ -126,6 +126,12 @@ inline std::string posterUrl(const std::string& id, const std::string& fallback)
         url.replace(url.find("{imdbId}"), 8, tt);
         return url;
     }
+    if (!fallback.empty()) return fallback;
+    // Nothing from the catalog: Cinemeta serves a poster for any IMDb id from a
+    // stable path, which is what Stremio itself falls back to. That covers a
+    // library entry built from an episode id, where no poster came along.
+    if (id.rfind("tt", 0) == 0)
+        return "https://images.metahub.space/poster/medium/" + id.substr(0, id.find(':')) + "/img";
     return fallback;
 }
 

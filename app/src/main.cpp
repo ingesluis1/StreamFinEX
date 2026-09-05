@@ -82,6 +82,18 @@ int main(int argc, char* argv[]) {
     conf.initThemes();
     DownloadManager::instance().init();
 
+    // Announce a finished download wherever the user happens to be. Only the
+    // downloads screen listened for this, so a download that landed while
+    // browsing elsewhere finished in silence.
+    DownloadManager::instance().getStatusEvent()->subscribe([](const std::string& itemId, DownloadStatus status) {
+        if (status != DownloadStatus::Completed) return;
+        for (auto& item : DownloadManager::instance().getItems()) {
+            if (item.itemId != itemId) continue;
+            brls::Application::notify("main/download/completed"_i18n + std::string(" · ") + item.name);
+            return;
+        }
+    });
+
     // Return directly to the desktop when closing the application (only for NX)
     brls::Application::getPlatform()->exitToHomeMode(true);
 

@@ -144,6 +144,11 @@ void DownloadManager::resumeQueue() {
     this->processQueue();
 }
 
+void DownloadManager::abortActive() {
+    std::lock_guard<std::mutex> lock(this->mutex);
+    if (this->currentCancel) this->currentCancel->store(true);
+}
+
 void DownloadManager::cancelDownload(const std::string& itemId) {
     bool erased = false;
     {

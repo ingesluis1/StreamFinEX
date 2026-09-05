@@ -65,6 +65,10 @@ public:
     void cancelDownload(const std::string& itemId);
     void removeDownload(const std::string& itemId);
     void resumeQueue();
+    /// Ask a transfer that is running right now to stop. Used on shutdown, where
+    /// joining a worker that is mid-download would otherwise block for as long
+    /// as the download takes.
+    void abortActive();
 
     DownloadStatus findItem(const std::string& itemId) const;
     std::pair<size_t, size_t> findSeries(const std::string& seriesId) const;

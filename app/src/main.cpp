@@ -147,6 +147,12 @@ int main(int argc, char* argv[]) {
     // Run the app
     while (brls::Application::mainLoop());
 
+    // A worker sitting inside a transfer does not notice the pool stopping
+    // until curl returns, and stop() joins every worker. The window is already
+    // gone by then, so quitting mid-download left a black screen for as long as
+    // the download had left to run. Abort the transfer first; the item stays
+    // half-finished on disk and comes back as queued on the next launch.
+    DownloadManager::instance().abortActive();
     ThreadPool::instance().stop();
 
     conf.checkRestart(argv);

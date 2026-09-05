@@ -244,6 +244,10 @@ public:
             } else {
                 detail = item.name;
             }
+            // Releases often default to a dubbed audio track. The stream
+            // picker already asks for English first; local playback went
+            // straight to MPV and got whatever the file marks as default.
+            MPVCore::instance().command("set", "alang", "eng,en");
             RemoteView::play(path, detail);
         } else if (item.status == DownloadStatus::Downloading) {
             std::string id = item.itemId;

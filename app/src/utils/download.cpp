@@ -115,6 +115,24 @@ void DownloadManager::addStreamDownload(const std::string& itemId, const std::st
     this->items.push_back(dl);
     this->saveIndex();
     brls::Logger::info("Stream download queued: {}", name);
+
+    // Fetch the artwork now, while nothing else is in flight, rather than from
+    // inside doDownload: the tile then shows up as soon as the item is queued,
+    // and it is one small request on its own instead of a second one competing
+    // with the transfer for the connection pool every HTTP object shares.
+    if (!poster.empty()) {
+        std::string dir = this->downloadDir() + "/" + itemId;
+        std::string url = poster;
+        brls::async([dir, url]() {
+            try {
+                if (!fs::exists(dir)) fs::create_directories(dir);
+                HTTP::download(url, dir + "/thumb.png", HTTP::Timeout{10000});
+            } catch (const std::exception& e) {
+                brls::Logger::warning("Failed to fetch poster: {}", e.what());
+            }
+        });
+    }
+
     this->processQueue();
 }
 

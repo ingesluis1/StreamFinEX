@@ -114,6 +114,12 @@ HTTP::HTTP() : chunk(nullptr) {
 
     curl_easy_setopt(this->easy, CURLOPT_USERAGENT, user_agent.c_str());
     curl_easy_setopt(this->easy, CURLOPT_FOLLOWLOCATION, 1L);
+    // A Switch on a home network has no working IPv6 in practice, so curl's
+    // Happy Eyeballs racing only ever produces attempts that get torn down --
+    // and tearing one down is where it faulted (cf-ip-happy.c, reached from a
+    // discarded connection in the shared pool). Asking for IPv4 only keeps
+    // that path out of play and saves the failed attempts.
+    curl_easy_setopt(this->easy, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
     curl_easy_setopt(this->easy, CURLOPT_SHARE, global.share);
     // enable all supported built-in compressions
     curl_easy_setopt(this->easy, CURLOPT_ACCEPT_ENCODING, "");

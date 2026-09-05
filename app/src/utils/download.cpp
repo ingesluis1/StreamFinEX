@@ -307,7 +307,6 @@ void DownloadManager::doDownload(DownloadItem& item) {
     std::string itemDir = this->downloadDir() + "/" + itemId;
     bool isDirect = !item.sourceUrl.empty();
     std::string presetFile = item.filePath;
-    std::string posterUrl = item.posterUrl;
 
     this->saveIndex();
 
@@ -316,8 +315,8 @@ void DownloadManager::doDownload(DownloadItem& item) {
 
     brls::sync([this, itemId]() { this->statusEvent.fire(itemId, DownloadStatus::Downloading); });
 
-    ThreadPool::instance().submit([this, itemId, imagePrimaryTag, quality, url, itemDir, cancel, isDirect,
-                                      presetFile, posterUrl](HTTP& s) {
+    ThreadPool::instance().submit(
+        [this, itemId, imagePrimaryTag, quality, url, itemDir, cancel, isDirect, presetFile](HTTP& s) {
         auto resetQueue = [this, itemId](const std::string& error) {
             brls::sync([this, itemId, error]() {
                 {
@@ -395,18 +394,6 @@ void DownloadManager::doDownload(DownloadItem& item) {
                 }
             }
             this->saveIndex();
-        }
-
-        // Stremio items have no Jellyfin image endpoint. Save the addon's
-        // poster as thumb.png so the Downloads list shows a real tile instead
-        // of firing a Jellyfin image request that cannot succeed.
-        if (isDirect && !posterUrl.empty() && !cancel->load()) {
-            try {
-                HTTP::download(posterUrl, itemDir + "/thumb.png", HTTP::Timeout{});
-            } catch (const std::exception& e) {
-                fs::remove(itemDir + "/thumb.png");
-                brls::Logger::warning("Failed to download poster: {}", e.what());
-            }
         }
 
         if (!imagePrimaryTag.empty() && !cancel->load()) {

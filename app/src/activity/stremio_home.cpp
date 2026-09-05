@@ -15,6 +15,7 @@
 #include "activity/stremio_library.hpp"
 #include "activity/stremio_anime.hpp"
 #include "activity/stremio_rows.hpp"
+#include "utils/dialog.hpp"
 #include "view/mpv_core.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/h_recycling.hpp"
@@ -358,6 +359,15 @@ StremioHome::StremioHome() {
         promptForAddon(stremio::STREAM_ADDON);
         return true;
     });
+    // B on the home screen asks to quit. There was no way out of the app at
+    // all: setGlobalQuit(false) means no activity registers one. quitApp()
+    // sets exitToHomeMode(false) before quitting, so this lands back in the
+    // homebrew menu rather than the Switch home screen.
+    this->registerAction("hints/exit"_i18n, brls::BUTTON_B, [](brls::View*) {
+        Dialog::quitApp();
+        return true;
+    });
+
     if (stremio::STREAM_ADDON.empty())
         brls::sync([]() { promptForAddon(""); });
 }

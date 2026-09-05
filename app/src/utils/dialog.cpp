@@ -24,6 +24,7 @@ void Dialog::cancelable(const std::string& msg, Callback cb) {
 /// 退出应用提示
 void Dialog::quitApp(bool restart) {
     auto dialog = new brls::Dialog("main/setting/quit_hint"_i18n);
+    dialog->addButton("hints/cancel"_i18n, []() {});
     dialog->addButton("hints/ok"_i18n, [restart]() {
         brls::Box* container = new brls::Box();
         container->setJustifyContent(brls::JustifyContent::CENTER);
@@ -39,6 +40,5 @@ void Dialog::quitApp(bool restart) {
         brls::Application::getPlatform()->exitToHomeMode(!restart);
         brls::Application::quit();
     });
-    dialog->setCancelable(false);
     dialog->open();
 }

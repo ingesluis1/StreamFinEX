@@ -15,7 +15,10 @@ class RecyclingGrid;
 
 class StreamPicker : public brls::Box {
 public:
-    StreamPicker(const std::string& title, const std::vector<stremio::Stream>& streams, const ResumeEntry& resumeKey);
+    // libraryItem is the title to add to the library when a stream is saved.
+    // Leave it empty to save without touching the library.
+    StreamPicker(const std::string& title, const std::vector<stremio::Stream>& streams, const ResumeEntry& resumeKey,
+        stremio::Meta libraryItem = {});
 
 private:
     RecyclingGrid* recycler = nullptr;

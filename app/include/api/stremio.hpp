@@ -264,6 +264,18 @@ inline void to_json(nlohmann::json& j, const Meta& m) {
 }
 
 // Response of /catalog/{type}/{id}.json
+// An episode id is "ttID:season:episode", or "kitsu:ID:episode" for anime.
+// The library holds shows rather than episodes, so strip the episode part.
+inline std::string showIdOf(const std::string& videoId) {
+    size_t first = videoId.find(':');
+    if (first == std::string::npos) return videoId;
+    if (videoId.compare(0, 6, "kitsu:") == 0) {
+        size_t second = videoId.find(':', first + 1);
+        return second == std::string::npos ? videoId : videoId.substr(0, second);
+    }
+    return videoId.substr(0, first);
+}
+
 struct MetaList {
     std::vector<Meta> metas;
 };

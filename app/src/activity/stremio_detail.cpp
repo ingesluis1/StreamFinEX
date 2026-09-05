@@ -362,7 +362,8 @@ void StremioDetail::openStreams() {
                 return;
             }
             ResumeEntry key{usedType, this->item.id, this->item.name, this->item.poster};
-            brls::Application::pushActivity(new brls::Activity(new StreamPicker(name, r.streams, key)));
+            brls::Application::pushActivity(
+                new brls::Activity(new StreamPicker(name, r.streams, key, this->item)));
         },
         [ASYNC_TOKEN](const std::string& e) {
             ASYNC_RELEASE

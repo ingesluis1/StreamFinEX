@@ -6,6 +6,7 @@
 */
 #include "activity/stremio_streams.hpp"
 #include "activity/stremio_resume.hpp"
+#include "activity/stremio_favourites.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/svg_image.hpp"
 #include "view/mpv_core.hpp"
@@ -191,8 +192,8 @@ private:
 
 }  // namespace
 
-StreamPicker::StreamPicker(
-    const std::string& title, const std::vector<stremio::Stream>& streams, const ResumeEntry& resumeKey) {
+StreamPicker::StreamPicker(const std::string& title, const std::vector<stremio::Stream>& streams,
+    const ResumeEntry& resumeKey, stremio::Meta libraryItem) {
     brls::Logger::debug("StreamPicker: {} streams", streams.size());
     this->setAxis(brls::Axis::COLUMN);
     this->setDimensions(brls::Application::contentWidth, brls::Application::contentHeight);
@@ -236,7 +237,7 @@ StreamPicker::StreamPicker(
     // it back locally when it is done.
     if (!playable.empty()) {
         this->recycler->registerAction(
-            "main/download/start"_i18n, brls::BUTTON_X, [playable, resumeKey](brls::View*) {
+            "main/download/start"_i18n, brls::BUTTON_X, [playable, resumeKey, libraryItem](brls::View*) {
                 auto* focus = dynamic_cast<RecyclingGridItem*>(brls::Application::getCurrentFocus());
                 if (focus == nullptr) return true;
                 size_t index = focus->getIndex();
@@ -261,6 +262,14 @@ StreamPicker::StreamPicker(
                 std::string label = resumeKey.name.empty() ? s.name : resumeKey.name;
                 DownloadManager::instance().addStreamDownload(itemId, label, resumeKey.streamType, s.url,
                     safeFileName(s.filename, label), resumeKey.poster, s.videoSize);
+                // Saving something is a statement of interest, so put the title in
+                // the library too. Add only -- toggle() would quietly remove a title
+                // that is already there.
+                if (!libraryItem.id.empty() && !libraryItem.name.empty() &&
+                    !Favourites::instance().contains(libraryItem.id)) {
+                    Favourites::instance().toggle(libraryItem);
+                }
+
                 brls::Application::notify("Saved to Downloads");
                 return true;
             });

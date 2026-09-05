@@ -115,14 +115,23 @@ public:
             ? fmt::format("S{}E{} · {}", v.season, v.episode, v.name)
             : fmt::format("{} · S{}E{} · {}", this->seriesName, v.season, v.episode, v.name);
         std::string vid = v.id, thumb = v.thumbnail;
+        std::string show = this->seriesName;
         stremio::fetchStreams("series", vid,
-            [label, vid, thumb](stremio::StreamList r, std::string usedType) {
+            [label, vid, thumb, show](stremio::StreamList r, std::string usedType) {
                 if (r.streams.empty()) {
                     brls::Application::notify("No streams found");
                     return;
                 }
                 ResumeEntry key{usedType, vid, label, thumb};
-                brls::Application::pushActivity(new brls::Activity(new StreamPicker(label, r.streams, key)));
+                // Saving an episode files the show under the library, not the
+                // single episode; year and rating fill themselves in from
+                // Cinemeta the next time the library is browsed.
+                stremio::Meta lib;
+                lib.id = stremio::showIdOf(vid);
+                lib.type = "series";
+                lib.name = show;
+                brls::Application::pushActivity(
+                    new brls::Activity(new StreamPicker(label, r.streams, key, lib)));
             },
             [](const std::string& e) { brls::Application::notify("Stream error: " + e); });
     }

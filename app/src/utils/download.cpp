@@ -1,5 +1,6 @@
 #include "utils/download.hpp"
 #include "utils/config.hpp"
+#include <borealis/core/application.hpp>
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -317,9 +318,23 @@ void DownloadManager::processQueue() {
         if (item.status == DownloadStatus::Queued) {
             this->downloading = true;
             this->doDownload(item);
+            this->applySleepPolicy();
             return;
         }
     }
+    this->applySleepPolicy();
+}
+
+void DownloadManager::applySleepPolicy() {
+    // A console that dims and drops to sleep takes the transfer down with it,
+    // which is what actually interrupts a long download -- not the user. Claim
+    // the same "media is playing" state the video player uses while the queue
+    // is busy, and release it when it is done.
+    bool busy = this->downloading;
+    brls::sync([busy]() {
+        brls::Application::getPlatform()->disableScreenDimming(
+            busy, "Downloading", AppVersion::getPackageName());
+    });
 }
 
 // Must be called with mutex held. Copies what it needs, then releases via async.
@@ -451,7 +466,8 @@ void DownloadManager::doDownload(DownloadItem& item) {
         }
 
         auto lastProgress = std::make_shared<std::chrono::steady_clock::time_point>();
-        HTTP::Progress::Callback progressCb = [this, itemId, lastProgress](curl_off_t total, curl_off_t now) {
+        HTTP::Progress::Callback progressCb = [this, itemId, lastProgress, resumeFrom](
+                                                  curl_off_t total, curl_off_t now) {
             auto tp = std::chrono::steady_clock::now();
             if (tp - *lastProgress < std::chrono::seconds(1)) return;
             *lastProgress = tp;

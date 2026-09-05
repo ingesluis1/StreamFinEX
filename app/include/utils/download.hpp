@@ -82,6 +82,9 @@ public:
 
 private:
     void saveIndex();
+    /// Keeps the console awake while the queue is busy, and lets it sleep again
+    /// once it is not.
+    void applySleepPolicy();
     void loadIndex();
     void processQueue();
     void doDownload(DownloadItem& item);

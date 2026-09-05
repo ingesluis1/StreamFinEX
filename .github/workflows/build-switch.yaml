@@ -33,7 +33,7 @@ jobs:
         cmake -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DPLATFORM_SWITCH=ON \
-          -DBUILTIN_NSP=ON \
+          -DBUILTIN_NSP=OFF \
           -DVERSION_BUILD=${{ github.run_number }}
         make -C build StreamFin.nro -j$(nproc)
     - name: Upload nro artifact

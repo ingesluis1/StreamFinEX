@@ -91,9 +91,17 @@ public:
         std::string thumbPath = downloadDir + "/" + item.itemId + "/thumb.png";
         if (fs::exists(thumbPath)) {
             this->thumb->setImageFromFile(thumbPath);
-        } else {
+        } else if (item.sourceUrl.empty()) {
             Image::load(this->thumb, jellyfin::apiPrimaryImage, item.itemId,
                 HTTP::encode_form({{"tag", item.imagePrimaryTag}, {"maxWidth", "300"}}));
+        } else {
+            // A saved stream has no Jellyfin server behind it, so asking one
+            // for artwork fires a request that cannot succeed -- once per
+            // visible row, and again on every reload of the list. The list
+            // reloads on each progress tick, so with this screen open during
+            // a download that is a steady stream of failing connections
+            // through the pool every HTTP object shares.
+            this->thumb->setImageFromRes("img/video-card-bg.png");
         }
 
         // title = episode or movie name; subtitle = "Show · SxEy" or year,

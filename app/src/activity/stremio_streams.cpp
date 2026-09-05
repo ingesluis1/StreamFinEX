@@ -11,12 +11,41 @@
 #include "view/mpv_core.hpp"
 #include "tab/remote_view.hpp"
 #include "api/stremio.hpp"
+#include "utils/download.hpp"
 
 #include <algorithm>
+#include <cstring>
+#include <functional>
 
 using namespace brls::literals;
 
 namespace {
+
+// The SD card in a modded Switch is almost always FAT32, which cannot hold a
+// single file of 4 GiB or more. 4K remuxes routinely exceed that, so refuse
+// them up front rather than failing partway through a long download.
+constexpr int64_t FAT32_MAX_FILE = 4294967295LL;
+
+// Turn a release filename into something FAT32 and MPV both accept: no
+// reserved characters, plain ASCII, no leading/trailing dots or spaces, and
+// short enough to survive the download directory prefix.
+std::string safeFileName(const std::string& raw, const std::string& fallback) {
+    std::string in = raw.empty() ? fallback + ".mkv" : raw;
+    std::string out;
+    for (unsigned char c : in) {
+        if (c < 0x20 || c == 0x7f || c >= 0x80) continue;
+        out += (std::strchr("\\/:*?\"<>|", c) != nullptr) ? '_' : (char)c;
+    }
+    while (!out.empty() && (out.front() == ' ' || out.front() == '.')) out.erase(out.begin());
+    while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
+    if (out.empty()) out = "video.mkv";
+    if (out.size() > 120) {
+        auto dot = out.find_last_of('.');
+        std::string ext = (dot != std::string::npos && out.size() - dot <= 6) ? out.substr(dot) : ".mkv";
+        out = out.substr(0, 120 - ext.size()) + ext;
+    }
+    return out;
+}
 
 // Fetches subtitles from the configured subtitles addon (SubSource etc.) for
 // the title being played and attaches them to MPV once the file is loaded.
@@ -200,6 +229,42 @@ StreamPicker::StreamPicker(
     // Defer focus until after the activity is on screen.
     brls::sync([this]() { brls::Application::giveFocus(this); });
     brls::sync([this]() { brls::Application::giveFocus(this->recycler); });
+
+    // X saves the focused stream instead of playing it. The addon handed us a
+    // direct URL, so this is a plain HTTP download into the queue that already
+    // exists -- the Downloads screen then lists it, shows progress, and plays
+    // it back locally when it is done.
+    if (!playable.empty()) {
+        this->recycler->registerAction(
+            "main/download/start"_i18n, brls::BUTTON_X, [playable, resumeKey](brls::View*) {
+                auto* focus = dynamic_cast<RecyclingGridItem*>(brls::Application::getCurrentFocus());
+                if (focus == nullptr) return true;
+                size_t index = focus->getIndex();
+                if (index >= playable.size()) return true;
+
+                auto& s = playable.at(index);
+                if (s.videoSize >= FAT32_MAX_FILE) {
+                    brls::Application::notify("Too big for FAT32 (4 GB max) - pick a smaller release");
+                    return true;
+                }
+
+                // The same release for the same title always hashes to the same
+                // id, so pressing X twice cannot queue it twice.
+                std::string basis = resumeKey.streamId + "|" + (s.filename.empty() ? s.name : s.filename);
+                std::string itemId = "stremio_" + std::to_string(std::hash<std::string>{}(basis));
+
+                if (DownloadManager::instance().findItem(itemId) != DownloadStatus::NotFound) {
+                    brls::Application::notify("Already in your downloads");
+                    return true;
+                }
+
+                std::string label = resumeKey.name.empty() ? s.name : resumeKey.name;
+                DownloadManager::instance().addStreamDownload(itemId, label, resumeKey.streamType, s.url,
+                    safeFileName(s.filename, label), resumeKey.poster, s.videoSize);
+                brls::Application::notify("Saved to Downloads");
+                return true;
+            });
+    }
 
     this->registerAction("hints/back"_i18n, brls::BUTTON_B, [](brls::View*) {
         brls::Application::popActivity();

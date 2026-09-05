@@ -87,6 +87,37 @@ void DownloadManager::addDownload(const std::string& itemId, DownloadQuality qua
         AppConfig::instance().getUserId(), itemId);
 }
 
+void DownloadManager::addStreamDownload(const std::string& itemId, const std::string& name,
+    const std::string& type, const std::string& url, const std::string& fileName, const std::string& poster,
+    int64_t totalBytes) {
+    std::lock_guard<std::mutex> lock(this->mutex);
+
+    for (auto& existing : this->items) {
+        if (existing.itemId == itemId) {
+            brls::Logger::info("Already exists: {}", itemId);
+            return;
+        }
+    }
+
+    // Unlike addDownload() there is nothing to fetch first: the caller already
+    // holds everything (URL, filename, size, poster) from the stream listing.
+    DownloadItem dl;
+    dl.itemId = itemId;
+    dl.name = name;
+    dl.type = type;
+    dl.sourceUrl = url;
+    dl.posterUrl = poster;
+    dl.filePath = fileName;
+    dl.totalBytes = totalBytes;
+    dl.quality = DownloadQuality::Original;
+    dl.status = DownloadStatus::Queued;
+
+    this->items.push_back(dl);
+    this->saveIndex();
+    brls::Logger::info("Stream download queued: {}", name);
+    this->processQueue();
+}
+
 void DownloadManager::resumeQueue() {
     std::lock_guard<std::mutex> lock(this->mutex);
     this->processQueue();
@@ -202,6 +233,11 @@ std::vector<DownloadItem> DownloadManager::getItems() const {
 }
 
 std::string DownloadManager::buildDownloadUrl(const DownloadItem& item) const {
+    // A Stremio stream arrives with its final URL already resolved by the
+    // addon -- there is no server + token to compose, and no quality variants
+    // to request. Hand it straight back.
+    if (!item.sourceUrl.empty()) return item.sourceUrl;
+
     auto& conf = AppConfig::instance();
     std::string server = conf.getUrl();
     std::string token = conf.getToken();
@@ -269,6 +305,9 @@ void DownloadManager::doDownload(DownloadItem& item) {
     DownloadQuality quality = item.quality;
     std::string url = this->buildDownloadUrl(item);
     std::string itemDir = this->downloadDir() + "/" + itemId;
+    bool isDirect = !item.sourceUrl.empty();
+    std::string presetFile = item.filePath;
+    std::string posterUrl = item.posterUrl;
 
     this->saveIndex();
 
@@ -277,7 +316,8 @@ void DownloadManager::doDownload(DownloadItem& item) {
 
     brls::sync([this, itemId]() { this->statusEvent.fire(itemId, DownloadStatus::Downloading); });
 
-    ThreadPool::instance().submit([this, itemId, imagePrimaryTag, quality, url, itemDir, cancel](HTTP& s) {
+    ThreadPool::instance().submit([this, itemId, imagePrimaryTag, quality, url, itemDir, cancel, isDirect,
+                                      presetFile, posterUrl](HTTP& s) {
         auto resetQueue = [this, itemId](const std::string& error) {
             brls::sync([this, itemId, error]() {
                 {
@@ -310,14 +350,17 @@ void DownloadManager::doDownload(DownloadItem& item) {
         }
 
         auto& conf = AppConfig::instance();
-        HTTP::Header header = {conf.getAuth(conf.getToken())};
+        // Direct downloads go to a third-party host (the debrid service), so
+        // the Jellyfin auth header has no business travelling with them.
+        HTTP::Header header;
+        if (!isDirect) header = {conf.getAuth(conf.getToken())};
 
         std::string ext = "mp4";
         if (cancel->load()) {
             resetQueue("Cancelled");
             return;
         }
-        if (quality == DownloadQuality::Original) {
+        if (!isDirect && quality == DownloadQuality::Original) {
             try {
                 auto resp = HTTP::get(
                     conf.getUrl() + fmt::format(fmt::runtime(jellyfin::apiUserItem), conf.getUserId(), itemId), header,
@@ -338,7 +381,9 @@ void DownloadManager::doDownload(DownloadItem& item) {
             }
         }
 
-        std::string fileName = "video." + ext;
+        // Direct downloads keep the release filename the addon reported;
+        // Jellyfin ones stay on the existing "video.<ext>" scheme.
+        std::string fileName = (isDirect && !presetFile.empty()) ? presetFile : "video." + ext;
         std::string filePath = itemDir + "/" + fileName;
 
         {
@@ -350,6 +395,18 @@ void DownloadManager::doDownload(DownloadItem& item) {
                 }
             }
             this->saveIndex();
+        }
+
+        // Stremio items have no Jellyfin image endpoint. Save the addon's
+        // poster as thumb.png so the Downloads list shows a real tile instead
+        // of firing a Jellyfin image request that cannot succeed.
+        if (isDirect && !posterUrl.empty() && !cancel->load()) {
+            try {
+                HTTP::download(posterUrl, itemDir + "/thumb.png", HTTP::Timeout{});
+            } catch (const std::exception& e) {
+                fs::remove(itemDir + "/thumb.png");
+                brls::Logger::warning("Failed to download poster: {}", e.what());
+            }
         }
 
         if (!imagePrimaryTag.empty() && !cancel->load()) {

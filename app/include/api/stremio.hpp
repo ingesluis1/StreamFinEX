@@ -297,12 +297,24 @@ struct Stream {
     std::string title;        // detailed label (older addons)
     std::string description;  // detailed label (newer addons, incl. AIOStreams)
     std::string url;          // <-- the playable (debrid) URL we hand to MPV
+    std::string filename;     // behaviorHints.filename -- real release filename
+    int64_t videoSize = 0;    // behaviorHints.videoSize -- exact bytes, 0 if absent
 };
 inline void from_json(const nlohmann::json& j, Stream& s) {
     s.name = jstr(j, "name");
     s.title = jstr(j, "title");
     s.description = jstr(j, "description");
     s.url = jstr(j, "url");
+    // Addons put the release filename and the exact byte count in
+    // behaviorHints. Both matter when saving rather than streaming: the
+    // filename names the file on disk, and the size lets us reject anything
+    // FAT32 cannot hold before starting a doomed download.
+    auto hints = j.find("behaviorHints");
+    if (hints != j.end() && hints->is_object()) {
+        s.filename = jstr(*hints, "filename");
+        auto size = hints->find("videoSize");
+        if (size != hints->end() && size->is_number()) s.videoSize = size->get<int64_t>();
+    }
 }
 
 // Response of /stream/{type}/{id}.json

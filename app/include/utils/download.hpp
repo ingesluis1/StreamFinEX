@@ -42,10 +42,15 @@ struct DownloadItem {
     int64_t totalBytes = 0;
     int64_t downloadedBytes = 0;
     std::string errorMessage;
+    // Set for Stremio/debrid downloads: the addon already resolved a direct
+    // URL, so there is no Jellyfin server or item to look anything up on.
+    // Empty means this is a regular Jellyfin download.
+    std::string sourceUrl;
+    std::string posterUrl;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(DownloadItem, itemId, name, type, seriesId, seriesName,
     seasonIndex, episodeIndex, productionYear, runTimeTicks, imagePrimaryTag, quality, status,
-    filePath, totalBytes, downloadedBytes, errorMessage);
+    filePath, totalBytes, downloadedBytes, errorMessage, sourceUrl, posterUrl);
 
 class DownloadManager : public brls::Singleton<DownloadManager> {
 public:
@@ -55,6 +60,8 @@ public:
     void init();
 
     void addDownload(const std::string& itemId, DownloadQuality quality);
+    void addStreamDownload(const std::string& itemId, const std::string& name, const std::string& type,
+        const std::string& url, const std::string& fileName, const std::string& poster, int64_t totalBytes);
     void cancelDownload(const std::string& itemId);
     void removeDownload(const std::string& itemId);
     void resumeQueue();
